@@ -55,6 +55,7 @@ struct sched_list_node
     pthread_t tid;
     pid_t pid;
     int epoll_fd;
+    int disabled;
 
     struct client_session *request_handler;
 };

@@ -136,6 +136,12 @@ int mk_socket_server(int port, char *listen_addr)
         exit(EXIT_FAILURE);
     }
 
+    /* Activate TCP_DEFER_ACCEPT */
+    if (mk_socket_set_tcp_defer_accept(socket_fd) != 0) {
+            mk_warn("TCP_DEFER_ACCEPT failed");
+    }
+    mk_socket_set_nonblocking(socket_fd);
+
     return socket_fd;
 }
 

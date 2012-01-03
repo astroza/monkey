@@ -24,11 +24,33 @@
 #include "mk_plugin.h"
 #include "mk_macros.h"
 
+static inline void __mk_server_accept(int server_fd, struct sched_list_node *sched)
+{
+    unsigned int accept_count;
+    int remote_fd, ret;
+
+    for(accept_count = 0; 
+        sched->disabled == 0 && accept_count < 50 
+        && (remote_fd = mk_socket_accept(server_fd)) != -1;
+        accept_count++) {
+        ret = mk_sched_register_client(remote_fd, sched);
+        if(ret == -1) {
+            close(remote_fd);
+        }
+    }
+}
+
 int mk_conn_read(int socket)
 {
     int ret;
     struct client_session *cs;
     struct sched_list_node *sched;
+
+    sched = mk_sched_get_thread_conf();
+    if(config->server_fd == socket) {
+        __mk_server_accept(socket, sched);
+        return 0;
+    }
 
     MK_TRACE("[FD %i] Connection Handler / read", socket);
 
@@ -44,7 +66,6 @@ int mk_conn_read(int socket)
         break; /* just return controller to invoker */
     }
 
-    sched = mk_sched_get_thread_conf();
     cs = mk_session_get(socket);
     if (!cs) {
         /* Note: Linux don't set TCP_NODELAY socket flag by default */

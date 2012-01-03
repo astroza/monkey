@@ -114,6 +114,13 @@ int mk_sched_register_client(int remote_fd, struct sched_list_node *sched)
     struct sched_connection *sched_conn;
     struct mk_list *av_queue = &sched->av_queue;
 
+    ret = mk_epoll_add(sched->epoll_fd, remote_fd, MK_EPOLL_READ,
+            MK_EPOLL_LEVEL_TRIGGERED);
+
+    if(ret == -1) {
+        return -1;
+    }
+
     if (sched->active_connections < config->worker_capacity) {
         sched_conn = mk_list_entry_first(av_queue, struct sched_connection, _head);
 
@@ -135,6 +142,14 @@ int mk_sched_register_client(int remote_fd, struct sched_list_node *sched)
         sched_conn->socket = remote_fd;
         sched_conn->status = MK_SCHEDULER_CONN_PENDING;
         sched_conn->arrive_time = log_current_utime;
+        sched->active_connections++;
+
+        if(sched->active_connections >= config->worker_capacity) {
+            mk_epoll_change_mode(sched->epoll_fd, config->server_fd, -1, MK_EPOLL_EDGE_TRIGGERED);
+            sched->disabled = 1;
+        }
+
+        return 0;
     }
 
 
@@ -198,6 +213,8 @@ static void *mk_sched_launch_worker_loop(void *thread_conf)
 
     /* Export known scheduler node to context thread */
     pthread_setspecific(worker_sched_node, (void *) thinfo);
+
+    thinfo->disabled = 0;
 
     /* Init epoll_wait() loop */
     mk_epoll_init(thinfo->epoll_fd, handler, epoll_max_events);
@@ -264,6 +281,9 @@ int mk_sched_launch_thread(int max_events)
     if (efd < 1) {
         return -1;
     }
+
+    mk_epoll_add(efd, config->server_fd, MK_EPOLL_READ,
+            MK_EPOLL_EDGE_TRIGGERED);
 
     thconf = mk_mem_malloc(sizeof(sched_thread_conf));
     thconf->epoll_fd = efd;
@@ -336,12 +356,17 @@ int mk_sched_remove_client(struct sched_list_node *sched, int remote_fd)
         mk_plugin_stage_run(MK_PLUGIN_STAGE_50, remote_fd, NULL, NULL, NULL);
 
         /* Change node status */
-        __sync_fetch_and_sub(&sched->active_connections, 1);
         sc->status = MK_SCHEDULER_CONN_AVAILABLE;
         sc->socket = -1;
 
         mk_list_del(&sc->_head);
         mk_list_add(&sc->_head, &sched->av_queue);
+
+        sched->active_connections--;
+        if(sched->active_connections == config->worker_capacity/2 && sched->disabled) {
+            mk_epoll_change_mode(sched->epoll_fd, config->server_fd, MK_EPOLL_READ, MK_EPOLL_EDGE_TRIGGERED);
+            sched->disabled = 0;
+        }
 
         return 0;
     }

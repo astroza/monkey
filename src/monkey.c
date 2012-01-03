@@ -165,9 +165,6 @@ int main(int argc, char **argv)
     /* Register PID of Monkey */
     mk_utils_register_pid();
 
-    /* Workers: logger and clock */
-    mk_utils_worker_spawn((void *) mk_clock_worker_init);
-
     /* Init mk pointers */
     mk_mem_pointers_init();
 
@@ -189,8 +186,8 @@ int main(int argc, char **argv)
     /* Launch monkey http workers */
     mk_server_launch_workers();
 
-    /* Server loop, let's listen for incomming clients */
-    mk_server_loop(server_fd);
+    /* logger and clock */
+    mk_clock_worker_init(NULL);
 
     mk_mem_free(config);
     return 0;
